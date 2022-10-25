@@ -1,9 +1,15 @@
 
-a,b = 1,2 
+class Person:
+    __name: str
 
-def s(ans=a+b):
-    return ans
+    def __init__(self) -> None:
+        self.__name = 'bob'
 
-print(s())
-a=3
-print(s())
+    @property
+    def name(self):
+        return self.__name
+
+
+if __name__ == '__main__':
+    p = Person()
+    print(p.name)

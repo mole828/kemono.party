@@ -140,18 +140,6 @@ class Creator():
 
 if __name__ == '__main__':
     print(__file__)
-    # a = Creator('https://kemono.party/fanbox/user/14347285')
     a= Creator('https://kemono.party/fantia/user/26476')
-    def banner(name:str):
-        for word in [
-            'WIP'
-            'vote'
-        ]:
-            if word in name:return True
-        return False
     a.download()
-    # url = 'https://kemono.party/fanbox/user/14347285/post/4467848'
-    # p = Post(url)
-    # dir = pathlib.Path('./test/')
-    # p.download(dir)
     
