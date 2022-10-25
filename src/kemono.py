@@ -112,7 +112,8 @@ class Creator():
             ans.append(tup)
         return ans
     
-    def postiter(self):
+    @property
+    def posts(self):
         page = 0 
         while True:
             posts = self.page(page)
@@ -125,7 +126,7 @@ class Creator():
         if not root.exists():root.mkdir()
         creatorDir = root/self.name
         if not creatorDir.exists():creatorDir.mkdir()
-        for posttup in self.postiter():
+        for posttup in self.posts:
             [name, url] = posttup
             for tup in [(':','-')]:name = name.replace(tup[0],tup[1])
             postDir = creatorDir / name
