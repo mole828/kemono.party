@@ -8,60 +8,107 @@ import requests
 from bs4 import BeautifulSoup, PageElement, ResultSet, Tag
 import pathlib
 
+class Service(Enum):
+    fanbox = 0
+    fantia = 1
+    patreon = 2
+
 class Kemono:
     url = 'https://kemono.party'
+    proxies = {}
 
     @lru_cache
-    def creator(id: str) -> dict :
+    def creator(service: Service, id: str) -> dict :
         dir = pathlib.Path('./cache')
         if not dir.exists():dir.mkdir()
-        paths = [f for f in dir.iterdir()]
-        if len(paths) == 0:
-            with requests.get(f'{Kemono.url}/api/creators') as response:
+        path = pathlib.Path('./cache/creators.json')
+        if not path.exists():
+            with requests.get(f'{Kemono.url}/api/creators', proxies=Kemono.proxies) as response:
                 buffer = response.content
                 # contentLength = response.headers['Content-Length']
                 creatorMap = json.loads(buffer)
-                filepath = dir/f'{len(buffer)}.json'
-                if not filepath.exists():
-                    with open(filepath, 'w') as file:
-                        file.write(json.dumps(creatorMap))
-                paths.append(filepath)
-        path = paths[-1]
-        with open(path) as file:
+                with open(path, 'w', encoding='utf-8') as file:
+                    file.write(json.dumps(creatorMap))
+        with open(path,encoding='utf-8') as file:
             arr = json.loads(file.read())
             for creator in arr:
-                if creator['id']==id:return creator
-
-class ArtistType(Enum):
-    fanbox = 0
-    fantia = 1
+                if creator['service']==service.name and creator['id']==id:return creator
 
 
 class Post:
     url: str
+    service: Service
+    uid: str 
+    pid: str
     def __init__(self, url: str) -> None:
         self.url = url
-    
-    def __names():
+        words = url.split('/')
+        self.service = Service[words[3]]
+        self.uid = words[5]
+        self.pid = words[7]
+
+    def __nameitermaker():
         i = 0
         while True:
             yield str(i)
             i+=1
+    
+    @property
+    def cache_path(self) -> pathlib.Path:
+        return pathlib.Path(f'./cache/{self.service.name}-{self.uid}-{self.pid}')
+        
 
-    def download(self, dir:pathlib.Path, nameitermaker: Callable[[],Iterable] = __names):
+    @property
+    def cached(self) -> bool:   
+        return self.cache_path.exists()
+
+    @property
+    def __text(self) -> str:
+        path = self.cache_path
+        if not self.cached:
+            begin = time.time()
+            resp = requests.get(self.url,proxies=Kemono.proxies)
+            end = time.time()
+            print(f'reqjests.get({self.url}), spend: {end-begin}')
+            with open(path,mode='w',encoding='utf-8') as file:
+                file.write(resp.text)
+        with open(path,encoding='utf-8') as file:
+            return file.read()
+        
+    
+    @property
+    @lru_cache
+    def __soup(self) -> BeautifulSoup:
+        return BeautifulSoup(self.__text, features='html.parser')
+    
+    @property
+    def title(self) -> str:
+        return self.__soup.find(attrs={'class':'post__title'}).find_next('span').text
+
+    @property
+    def content(self) -> str:
+        try:
+            return self.__soup.find(attrs={'class':'post__content'}).text
+        except AttributeError as e:
+            return ""
+            
+
+    def download2dir(self, dir:pathlib.Path, nameitermaker: Callable[[],Iterable] = __nameitermaker) -> tuple[int,int]:
         '''
         just for manga 
         '''
+        print(f'start: {dir.name}')
         nameiter = nameitermaker()
         if not dir.exists():dir.mkdir()
-        resp = requests.get(self.url)
-        html = BeautifulSoup(resp.text, features='html.parser')
         contentpath = dir/'content.html'
-        with open(contentpath, mode='w') as file:
-            file.write(html.find(attrs={'class':'post__content'}).text)
-        files = html.find_all(attrs={'class': 'post__thumbnail'})
-        urls:List[str] = [file.a['href'] for file in files]
-        urls = [f'{Kemono.url}{url}' for url in urls]
+        with open(contentpath, mode='w', encoding='utf-8') as file:
+            try:
+                file.write(self.content)
+            except UnicodeEncodeError as e:
+                raise e
+        urls:List[str] = [file.a['href'] for file in self.__soup.find_all(attrs={'class': 'post__thumbnail'})]+[file.a['href'] for file in self.__soup.find_all(attrs={'class': 'post__attachment'})]
+        urls = [f'{url}' for url in urls]
+        downloads, skips = 0, 0
         for url in urls:
             lastname = url.split('.')[-1]
             firstname= next(nameiter)
@@ -69,7 +116,8 @@ class Post:
             filepath = dir/filename
             # download 
             if not filepath.exists():
-                with requests.get(url) as response:
+                downloads += 1
+                with requests.get(url,proxies=Kemono.proxies) as response:
                     buffer = response.content
                     contentLength = int(response.headers['Content-Length'])
                     if len(buffer) == contentLength:
@@ -77,25 +125,29 @@ class Post:
                             file.write(buffer)
                     else: 
                         print({'len(buffer)':len(buffer), 'contentLength':contentLength})
+            else: 
+                skips += 1
+        print(f"end: {dir.name}, downloads: {downloads}, skips: {skips}")
+        return downloads, skips
 
 
 class Creator():
-    type: ArtistType
+    service: Service
     id: str 
     name: str
 
     def __init__(self, url: str) -> None:
         words = url.split('/')
-        self.type = ArtistType[words[-3]]
+        self.service = Service[words[-3]]
         self.id = words[-1]
-        self.name = Kemono.creator(self.id)['name']
+        self.name = Kemono.creator(self.service, self.id)['name']
 
     def page(self, p: int = 0) -> List[Tuple[str, str]]:
         '''
         :return List[Tuple[name, href]]
         '''
-        url = f'{Kemono.url}/{self.type.name}/user/{self.id}?o={p*50}'
-        resp = requests.get(url)
+        url = f'{Kemono.url}/{self.service.name}/user/{self.id}?o={p*50}'
+        resp = requests.get(url,proxies=Kemono.proxies)
         html = BeautifulSoup(resp.text, features='html.parser')
         article_htmls = html.find(
             attrs={'class': 'card-list__items'}
@@ -105,7 +157,7 @@ class Creator():
         ans:List[Tuple[str, str]] = []
         article_html:Tag
         for article_html in article_htmls:
-            name:str = article_html.find(name='header').string.replace(' ', '').replace('\n','')
+            name:str = article_html.find(name='header').string .replace('\n','')
             href:str = article_html.find(name='a').attrs['href']
             href = f'{Kemono.url}{href}'
             tup = (name, href)
@@ -114,6 +166,10 @@ class Creator():
     
     @property
     def posts(self):
+        '''
+        A posts iter
+        :return Generator[Tuple[name, href]]
+        '''
         page = 0 
         while True:
             posts = self.page(page)
@@ -128,19 +184,25 @@ class Creator():
         if not creatorDir.exists():creatorDir.mkdir()
         for posttup in self.posts:
             [name, url] = posttup
-            for tup in [(':','-')]:name = name.replace(tup[0],tup[1])
+            post = Post(url)
+            cached = post.cached
+            name = post.title
+            def f(s:str):
+                if s[0]==' ':return f(s[1:])
+                if s[-1]==' ':return f(s[:-1])
+                return s
+            name = f(name)
+            for s in ['<', '>', '/', '\\', '|', ':', '*', '?', '"']:name = name.replace(s,'-')
+            while name.endswith('.'):name.replace('.','-')
             postDir = creatorDir / name
             if not postDir.exists():postDir.mkdir()
-            post = Post(url)
+            
             if banner(name):
                 print('skip: ',name)
                 continue
-            print('start: ', name)
-            post.download(postDir)
-            time.sleep(5)
-
-if __name__ == '__main__':
-    print(__file__)
-    a= Creator('https://kemono.party/fantia/user/26476')
-    a.download()
-    
+            downloads, skips = post.download2dir(postDir)
+            sleep_time = 5 if downloads!=0 else 0 if cached else 1
+            print(f'sleep {sleep_time} sec')
+            time.sleep(
+                sleep_time
+            )
