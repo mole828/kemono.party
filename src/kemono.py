@@ -98,7 +98,6 @@ class Post:
         just for manga 
         '''
         print(f'start: {dir.name}')
-        nameiter = nameitermaker()
         if not dir.exists():dir.mkdir()
         contentpath = dir/'content.html'
         with open(contentpath, mode='w', encoding='utf-8') as file:
@@ -106,9 +105,11 @@ class Post:
                 file.write(self.content)
             except UnicodeEncodeError as e:
                 raise e
+        # TODO: get file name from <a ... download="{name}"></a>
         urls:List[str] = [file.a['href'] for file in self.__soup.find_all(attrs={'class': 'post__thumbnail'})]+[file.a['href'] for file in self.__soup.find_all(attrs={'class': 'post__attachment'})]
         urls = [f'{url}' for url in urls]
         downloads, skips = 0, 0
+        nameiter = nameitermaker()
         for url in urls:
             lastname = url.split('.')[-1]
             firstname= next(nameiter)
@@ -206,3 +207,10 @@ class Creator():
             time.sleep(
                 sleep_time
             )
+
+
+if __name__ == '__main__':
+    from urllib.parse import unquote
+    encoded_url = "%E3%83%96%E3%83%AC%E3%83%9E%E3%83%BC%E3%83%88%E3%83%B3%E3%82%BB%E3%83%AB%E3%83%95%E3%83%95%E3%82%A7%E3%83%A9T.mp4"
+    decoded_url = unquote(encoded_url)
+    print(decoded_url)
