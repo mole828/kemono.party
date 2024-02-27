@@ -1,6 +1,6 @@
 
 from enum import Enum
-from functools import lru_cache
+from functools import cache, lru_cache
 import json
 import time
 from typing import Callable, Iterable, List, Tuple
@@ -141,15 +141,24 @@ class Creator():
         words = url.split('/')
         self.service = Service[words[-3]]
         self.id = words[-1]
-        self.name = Kemono.creator(self.service, self.id)['name']
+        # self.name = Kemono.creator(self.service, self.id)['name']
+        html = self._page()
+        # print(html)
+        self.name = html.find(attrs={'class':'user-header__profile'}).find(attrs={'itemprop':'name'}).string
+
+
+    @cache 
+    def _page(self, p: int = 0) -> BeautifulSoup:
+        url = f'{Kemono.url}/{self.service.name}/user/{self.id}?o={p*50}'
+        resp = requests.get(url,proxies=Kemono.proxies)
+        html = BeautifulSoup(resp.text, features='html.parser')
+        return html
 
     def page(self, p: int = 0) -> List[Tuple[str, str]]:
         '''
         :return List[Tuple[name, href]]
         '''
-        url = f'{Kemono.url}/{self.service.name}/user/{self.id}?o={p*50}'
-        resp = requests.get(url,proxies=Kemono.proxies)
-        html = BeautifulSoup(resp.text, features='html.parser')
+        html = self._page(p)
         article_htmls = html.find(
             attrs={'class': 'card-list__items'}
         ).find_all(
